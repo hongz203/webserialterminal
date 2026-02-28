@@ -258,6 +258,17 @@
       accent-color: var(--accent);
     }
 
+    /* Match count badge on keyword tags */
+    .kw-count {
+      font-size: 9px;
+      background: rgba(0,0,0,0.22);
+      border-radius: 8px;
+      padding: 0 4px;
+      line-height: 1.6;
+      min-width: 16px;
+      text-align: center;
+    }
+
     /* Match mode badges on keyword tags */
     .kw-badge {
       font-size: 9px;
@@ -411,8 +422,8 @@
 
     <!-- Theme selector: VS Dark (default) / VS Light -->
     <select id="theme-select" title="Color theme">
-      <option value="dark">VS Dark</option>
-      <option value="light">VS Light</option>
+      <option value="dark">Dark (Visual Studio)</option>
+      <option value="light">Light (Visual Sutdio)</option>
     </select>
 
     <span id="status">Select a port to get started</span>
@@ -492,6 +503,11 @@
     let pendingMain   = [];   // Main view pending lines: string[]
     let pendingFilter = [];   // Filter view pending lines: Array<{ line, kw }>
     let rafId         = null; // requestAnimationFrame ID (null = not scheduled)
+
+    // Flag: true when kw.count was incremented since the last renderKwTags().
+    // renderKwTags() is called in flushPending() only when this is true,
+    // so the tag list never re-renders more than once per animation frame.
+    let countChanged  = false;
 
     // ================================================================
     //  DOM references (cached to avoid repeated querySelector calls)
@@ -690,7 +706,11 @@
       // Keyword matching runs on the raw line (without timestamp prefix)
       // so filter keywords don't accidentally match time strings like "14:32"
       const kw = matchKeyword(line);
-      if (kw) pendingFilter.push({ line, kw, ts });
+      if (kw) {
+        kw.count++;        // increment match counter for this keyword
+        countChanged = true;
+        pendingFilter.push({ line, kw, ts });
+      }
 
       // requestAnimationFrame: calls flushPending just before the next screen render
       // Even if many lines arrive in sequence, RAF is only scheduled once → all flushed in one frame
@@ -713,6 +733,13 @@
       if (pendingFilter.length > 0) {
         flushToView(filteredLogEl, pendingFilter, MAX_FILTER, ({ line, kw, ts }) => buildLineEl(line, kw, ts));
         pendingFilter = [];
+      }
+
+      // Re-render keyword tags only when at least one count changed.
+      // Called here (RAF callback) → at most once per frame even during log floods.
+      if (countChanged) {
+        renderKwTags();
+        countChanged = false;
       }
     }
 
@@ -901,6 +928,8 @@
       lineBuffer    = '';
       pendingMain   = [];
       pendingFilter = [];
+      keywords.forEach(k => k.count = 0);  // reset all match counters
+      renderKwTags();
     });
 
     // ================================================================
@@ -929,6 +958,7 @@
         enabled:   true,
         matchCase: document.getElementById('kw-match-case').checked,
         wholeWord: document.getElementById('kw-whole-word').checked,
+        count:     0,
       });
       kwInput.value = '';
       renderKwTags();
@@ -966,6 +996,15 @@
         txt.title = kw.enabled ? 'Click to disable' : 'Click to enable';
         txt.addEventListener('click', () => toggleKeyword(i));
         tag.appendChild(txt);
+
+        // Match count badge — hidden when 0, shown once matching starts
+        if (kw.count > 0) {
+          const cnt = document.createElement('span');
+          cnt.className = 'kw-count';
+          cnt.textContent = kw.count >= 10000 ? '9999+' : kw.count;
+          cnt.title = `${kw.count} matching line${kw.count !== 1 ? 's' : ''}`;
+          tag.appendChild(cnt);
+        }
 
         // Show "Aa" badge if case-sensitive, "W" badge if whole-word
         if (kw.matchCase) {
