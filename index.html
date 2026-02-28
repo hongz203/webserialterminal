@@ -270,6 +270,9 @@
     }
 
     .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 4px 10px;
       background: var(--bg-panel);
       font-size: 11px;
@@ -277,6 +280,19 @@
       border-bottom: 1px solid var(--bg-divider);
       flex-shrink: 0;
     }
+
+    /* Small action button inside panel title bar */
+    .panel-title button {
+      padding: 1px 8px;
+      font-size: 10px;
+      font-family: Arial, sans-serif;
+      background: var(--bg-input);
+      color: var(--text-dim);
+      border: 1px solid var(--border-input);
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .panel-title button:hover { background: var(--btn-hover); color: var(--text); }
 
     .log-view {
       flex: 1;
@@ -402,13 +418,19 @@
   <div id="content">
     <!-- Left: all received logs -->
     <div class="panel">
-      <div class="panel-title">Main Log — All received lines (max 10,000)</div>
+      <div class="panel-title">
+        <span>Main Log — All received lines (max 10,000)</span>
+        <button id="save-log-btn" title="Save Main Log to .log file">Save Log</button>
+      </div>
       <div class="log-view" id="main-log"></div>
     </div>
 
     <!-- Right: keyword-matched lines only -->
     <div class="panel">
-      <div class="panel-title">Filtered Log — Keyword matched lines (max 5,000)</div>
+      <div class="panel-title">
+        <span>Filtered Log — Keyword matched lines (max 5,000)</span>
+        <button id="save-filtered-btn" title="Save Filtered Log to .log file">Save Log</button>
+      </div>
       <div class="log-view" id="filtered-log"></div>
     </div>
   </div>
@@ -927,6 +949,56 @@
 
       kwTagsEl.innerHTML = ''; // clear existing tags
       kwTagsEl.appendChild(frag);
+    }
+
+    // ================================================================
+    //  Save Log to file (shared by Main Log and Filtered Log buttons)
+    // ================================================================
+    document.getElementById('save-log-btn')
+      .addEventListener('click', () => saveLog(mainLogEl, ''));
+    document.getElementById('save-filtered-btn')
+      .addEventListener('click', () => saveLog(filteredLogEl, '_filtered'));
+
+    /**
+     * Save all lines from a log view to a .log file.
+     * @param {HTMLElement} container - log view DOM element to read lines from
+     * @param {string}      suffix    - appended before .log in the filename (e.g. '_filtered')
+     */
+    function saveLog(container, suffix) {
+      // Collect plain text from every .log-line element currently in the DOM.
+      // .textContent on a span that contains highlight child-spans still returns
+      // the full concatenated text — exactly what we want.
+      const lines = Array.from(container.children).map(el => el.textContent);
+
+      if (lines.length === 0) {
+        setStatus('Nothing to save — log is empty', 'var(--text-dim)');
+        return;
+      }
+
+      // Build text blob with LF line endings
+      const text = lines.join('\n');
+      const blob  = new Blob([text], { type: 'text/plain' });
+
+      // Generate a timestamped filename: serial_log_20260228_143052[_filtered].log
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const ts  = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+                + `_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const filename = `serial_log_${ts}${suffix}.log`;
+
+      // URL.createObjectURL(): creates a temporary in-memory URL for the blob.
+      // We attach it to a hidden <a> element and programmatically click it
+      // to trigger the browser's file download — no server required.
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      a.click();
+
+      // Revoke the object URL shortly after to free memory
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      setStatus(`Saved ${lines.length} lines → ${filename}`, 'var(--accent)');
     }
 
     // ================================================================
