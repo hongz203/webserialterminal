@@ -39,6 +39,7 @@
 
       --accent: #8bc34a;  /* green — connected / success */
       --error:  #ff8888;  /* red — errors */
+      --text-ts: #787b80; /* timestamp prefix — muted blue-gray */
     }
 
     :root[data-theme="light"] {
@@ -70,6 +71,7 @@
 
       --accent: #007acc;
       --error:  #cd3131;
+      --text-ts: #a0a0a0; /* timestamp prefix — muted gray */
     }
 
     *, *::before, *::after {
@@ -125,6 +127,22 @@
     #status {
       font-size: 12px;
       color: var(--text-dim);
+    }
+
+    /* Timestamp checkbox in toolbar */
+    #timestamp-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    #timestamp-label input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: var(--accent);
     }
 
     /* ── Keyword bar ──────────────────────────────────────── */
@@ -316,6 +334,9 @@
       padding: 0 1px;
     }
 
+    /* Timestamp prefix rendered as a separate span for independent coloring */
+    .log-ts { color: var(--text-ts); }
+
     /* Scrollbar (Webkit: Chrome, Edge) */
     .log-view::-webkit-scrollbar       { width: 8px; height: 8px; }
     .log-view::-webkit-scrollbar-track { background: var(--bg-app); }
@@ -367,6 +388,11 @@
 
     <button id="connect-btn" disabled>Connect</button>
     <button id="clear-btn">Clear</button>
+
+    <!-- Timestamp toggle: prepend [HH:MM:SS.mmm] to each incoming line -->
+    <label id="timestamp-label" title="Prepend receive timestamp to each line">
+      <input type="checkbox" id="timestamp-toggle"> Timestamp
+    </label>
 
     <!-- Divider -->
     <span style="color:var(--text-dim); margin: 0 2px">|</span>
@@ -640,13 +666,31 @@
       }
     }
 
-    function processLine(line) {
-      // Add to main view queue
-      pendingMain.push(line);
+    // ================================================================
+    //  Timestamp helpers
+    // ================================================================
+    const timestampToggle = document.getElementById('timestamp-toggle');
 
-      // Check if any active keyword matches this line
+    // Returns current time as [HH:MM:SS.mmm]
+    function getTimestamp() {
+      const now = new Date();
+      const pad  = n => String(n).padStart(2, '0');
+      const ms   = String(now.getMilliseconds()).padStart(3, '0');
+      return `[${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${ms}]`;
+    }
+
+    function processLine(line) {
+      // Capture timestamp at receive time (not render time) for accuracy.
+      // Stored separately so it can be rendered as a differently-colored span.
+      const ts = timestampToggle.checked ? getTimestamp() : null;
+
+      // Add to main view queue: { text, ts }
+      pendingMain.push({ text: line, ts });
+
+      // Keyword matching runs on the raw line (without timestamp prefix)
+      // so filter keywords don't accidentally match time strings like "14:32"
       const kw = matchKeyword(line);
-      if (kw) pendingFilter.push({ line, kw });
+      if (kw) pendingFilter.push({ line, kw, ts });
 
       // requestAnimationFrame: calls flushPending just before the next screen render
       // Even if many lines arrive in sequence, RAF is only scheduled once → all flushed in one frame
@@ -662,12 +706,12 @@
       rafId = null;
 
       if (pendingMain.length > 0) {
-        flushToView(mainLogEl, pendingMain, MAX_MAIN, (line) => buildLineEl(line, null));
+        flushToView(mainLogEl, pendingMain, MAX_MAIN, ({ text, ts }) => buildLineEl(text, null, ts));
         pendingMain = [];
       }
 
       if (pendingFilter.length > 0) {
-        flushToView(filteredLogEl, pendingFilter, MAX_FILTER, ({ line, kw }) => buildLineEl(line, kw));
+        flushToView(filteredLogEl, pendingFilter, MAX_FILTER, ({ line, kw, ts }) => buildLineEl(line, kw, ts));
         pendingFilter = [];
       }
     }
@@ -710,15 +754,21 @@
     // ================================================================
     //  Build a log line DOM element (with keyword highlight if applicable)
     // ================================================================
-    function buildLineEl(line, kw) {
+    function buildLineEl(line, kw, ts) {
       const span = document.createElement('span');
       span.className = 'log-line';
 
+      // Prepend timestamp span if present (separate element → independent color via .log-ts)
+      if (ts) {
+        const tsSpan = document.createElement('span');
+        tsSpan.className = 'log-ts';
+        tsSpan.textContent = ts + ' ';
+        span.appendChild(tsSpan);
+      }
+
       if (!kw) {
-        // No keyword: use textContent
-        // ※ Never use innerHTML += — it re-parses the whole content and has XSS risk
-        //    textContent auto-escapes HTML special characters
-        span.textContent = line;
+        // No keyword: plain text node
+        span.appendChild(document.createTextNode(line));
       } else {
         // Line has a matching keyword: highlight only the matched parts
         appendHighlighted(span, line, kw);
