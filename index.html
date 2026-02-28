@@ -5,6 +5,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Serial Terminal</title>
   <style>
+    /* ================================================================
+       Theme variables — edit here to customize colors
+       Dark theme is the default (:root).
+       Light theme overrides are in :root[data-theme="light"].
+    ================================================================ */
+    :root {
+      /* ── Visual Studio Dark ── */
+      --bg-app:     #1e1e1e;   /* main background, log area */
+      --bg-toolbar: #2d2d2d;   /* toolbar */
+      --bg-panel:   #252525;   /* keyword bar, panel title */
+      --bg-input:   #3c3c3c;   /* buttons, inputs */
+      --bg-divider: #333333;   /* gap between panels */
+
+      --text:       #d4d4d4;   /* primary text */
+      --text-dim:   #888888;   /* secondary / muted text */
+      --text-panel: #777777;   /* panel title text */
+
+      --border:       #444444; /* general borders */
+      --border-input: #5a5a5a; /* input/button borders */
+      --border-focus: #777777; /* focused input outline */
+
+      --btn-hover:  #505050;   /* button hover background */
+
+      --connected-bg:     #4a1a1a; /* Disconnect button background */
+      --connected-border: #c04040;
+      --connected-text:   #ff8080;
+
+      --log-hover:  rgba(255,255,255,0.04); /* log line hover tint */
+
+      --scrollbar-thumb:       #484848;
+      --scrollbar-thumb-hover: #5e5e5e;
+
+      --accent: #8bc34a;  /* green — connected / success */
+      --error:  #ff8888;  /* red — errors */
+    }
+
+    :root[data-theme="light"] {
+      /* ── Visual Studio Light ── */
+      --bg-app:     #ffffff;
+      --bg-toolbar: #f3f3f3;
+      --bg-panel:   #ececec;
+      --bg-input:   #ffffff;
+      --bg-divider: #e5e5e5;
+
+      --text:       #383838;
+      --text-dim:   #717171;
+      --text-panel: #888888;
+
+      --border:       #e5e5e5;
+      --border-input: #cecece;
+      --border-focus: #0090f1;
+
+      --btn-hover:  #e8e8e8;
+
+      --connected-bg:     #dff0d8;
+      --connected-border: #388a34;
+      --connected-text:   #388a34;
+
+      --log-hover:  rgba(0,0,0,0.04);
+
+      --scrollbar-thumb:       #c1c1c1;
+      --scrollbar-thumb-hover: #a8a8a8;
+
+      --accent: #007acc;
+      --error:  #cd3131;
+    }
+
     *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
@@ -16,9 +83,8 @@
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
-      background: #1e1e1e;
-      color: #d4d4d4;
-      /* Fixed-width font for terminal look */
+      background: var(--bg-app);
+      color: var(--text);
       font-family: Arial, sans-serif;
       font-size: 13px;
     }
@@ -29,52 +95,51 @@
       align-items: center;
       gap: 8px;
       padding: 6px 12px;
-      background: #2d2d2d;
-      border-bottom: 1px solid #444;
-      flex-shrink: 0; /* Toolbar height is fixed, no shrinking */
+      background: var(--bg-toolbar);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
 
     #toolbar button,
     #toolbar select {
       padding: 4px 10px;
-      background: #3c3c3c;
-      color: #d4d4d4;
-      border: 1px solid #5a5a5a;
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border-input);
       border-radius: 3px;
       cursor: pointer;
       font-family: inherit;
       font-size: 12px;
     }
 
-    #toolbar button:hover:not(:disabled) { background: #505050; }
+    #toolbar button:hover:not(:disabled) { background: var(--btn-hover); }
     #toolbar button:disabled { opacity: 0.45; cursor: not-allowed; }
 
     /* Highlight "Disconnect" button while connected */
     #connect-btn.connected {
-      background: #4a1a1a;
-      border-color: #c04040;
-      color: #ff8080;
+      background: var(--connected-bg);
+      border-color: var(--connected-border);
+      color: var(--connected-text);
     }
 
     #status {
       font-size: 12px;
-      color: #888;
+      color: var(--text-dim);
     }
 
     /* ── Keyword bar ──────────────────────────────────────── */
     #keyword-bar {
       display: flex;
       align-items: center;
-      flex-wrap: wrap; /* Wrap keyword tags when there are many */
+      flex-wrap: wrap;
       gap: 6px;
       padding: 5px 12px;
-      background: #252525;
-      border-bottom: 1px solid #444;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
       flex-shrink: 0;
       min-height: 36px;
     }
 
-    /* Keep input group (label + input + color + button) on one line */
     #keyword-input-group {
       display: flex;
       align-items: center;
@@ -83,46 +148,44 @@
 
     #keyword-input-group label {
       font-size: 12px;
-      color: #888;
+      color: var(--text-dim);
       white-space: nowrap;
     }
 
     #keyword-input {
       padding: 3px 8px;
       width: 160px;
-      background: #3c3c3c;
-      color: #d4d4d4;
-      border: 1px solid #5a5a5a;
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border-input);
       border-radius: 3px;
       font-family: inherit;
       font-size: 12px;
     }
-    #keyword-input:focus { outline: 1px solid #777; }
+    #keyword-input:focus { outline: 1px solid var(--border-focus); }
 
-    /* Color picker input (native browser color picker) */
     #keyword-color {
       width: 30px;
       height: 26px;
-      border: 1px solid #5a5a5a;
+      border: 1px solid var(--border-input);
       border-radius: 3px;
-      background: #3c3c3c;
+      background: var(--bg-input);
       cursor: pointer;
       padding: 1px;
     }
 
     #add-keyword-btn {
       padding: 3px 10px;
-      background: #3c3c3c;
-      color: #d4d4d4;
-      border: 1px solid #5a5a5a;
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border-input);
       border-radius: 3px;
       cursor: pointer;
       font-family: inherit;
       font-size: 12px;
     }
-    #add-keyword-btn:hover { background: #505050; }
+    #add-keyword-btn:hover { background: var(--btn-hover); }
 
-    /* Keyword tag container */
     #keyword-tags {
       display: flex;
       flex-wrap: wrap;
@@ -130,7 +193,6 @@
       gap: 4px;
     }
 
-    /* Individual keyword tag */
     .kw-tag {
       display: inline-flex;
       align-items: center;
@@ -138,15 +200,17 @@
       padding: 2px 7px;
       border-radius: 3px;
       font-size: 11px;
-      border: 1px solid rgba(255,255,255,0.15);
+      border: 1px solid rgba(128,128,128,0.3);
       user-select: none;
     }
-    /* Disabled state: dimmed */
-    .kw-tag.off { opacity: 0.38; }
-
-    .kw-tag .kw-text {
-      cursor: pointer; /* Click to toggle on/off */
+    /* Disabled: remove inline color overrides and apply theme-aware muted style */
+    .kw-tag.off {
+      opacity: 0.45;
+      background-color: var(--bg-input) !important;
+      color: var(--text-dim) !important;
     }
+
+    .kw-tag .kw-text { cursor: pointer; }
 
     .kw-tag .kw-remove {
       background: none;
@@ -160,23 +224,23 @@
     }
     .kw-tag .kw-remove:hover { opacity: 1; }
 
-    /* Checkbox labels in keyword input group */
+    /* Checkbox labels */
     .check-label {
       display: inline-flex;
       align-items: center;
       gap: 3px;
       font-size: 11px;
-      color: #888;
+      color: var(--text-dim);
       cursor: pointer;
       white-space: nowrap;
       user-select: none;
     }
     .check-label input[type="checkbox"] {
       cursor: pointer;
-      accent-color: #8bc34a; /* checkbox 체크 색상 */
+      accent-color: var(--accent);
     }
 
-    /* Small badges shown on keyword tags (e.g. "Aa" for case, "W" for whole word) */
+    /* Match mode badges on keyword tags */
     .kw-badge {
       font-size: 9px;
       font-weight: bold;
@@ -190,31 +254,30 @@
     /* ── Split view (main + filter) ─────────────────────────── */
     #content {
       display: flex;
-      flex: 1;     /* Fill remaining vertical space */
+      flex: 1;
       overflow: hidden;
-      background: #333; /* Divider color between panels */
+      background: var(--bg-divider);
       gap: 2px;
     }
 
     .panel {
       display: flex;
       flex-direction: column;
-      flex: 1;   /* Equal 1:1 split for left/right panels */
+      flex: 1;
       overflow: hidden;
-      background: #1e1e1e;
-      min-width: 0; /* Prevent flex child from overflowing content */
+      background: var(--bg-app);
+      min-width: 0;
     }
 
     .panel-title {
       padding: 4px 10px;
-      background: #252525;
+      background: var(--bg-panel);
       font-size: 11px;
-      color: #777;
-      border-bottom: 1px solid #333;
+      color: var(--text-panel);
+      border-bottom: 1px solid var(--bg-divider);
       flex-shrink: 0;
     }
 
-    /* Log scroll area */
     .log-view {
       flex: 1;
       overflow-y: auto;
@@ -223,41 +286,36 @@
       font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
     }
 
-    /* Render one line per span */
     .log-line {
       display: block;
-      /* pre: preserve whitespace/tabs, no wrap → long lines scroll horizontally */
       white-space: pre;
       font-size: 12px;
       line-height: 1.65;
-      color: #d4d4d4;
+      color: var(--text);
     }
-    .log-line:hover { background: rgba(255,255,255,0.04); }
+    .log-line:hover { background: var(--log-hover); }
 
-    /* Keyword highlight span */
     .hl {
       border-radius: 2px;
       padding: 0 1px;
-      /* background-color, color set inline by JS */
     }
 
-    /* Scrollbar style (Webkit: Chrome, Edge) */
+    /* Scrollbar (Webkit: Chrome, Edge) */
     .log-view::-webkit-scrollbar       { width: 8px; height: 8px; }
-    .log-view::-webkit-scrollbar-track { background: #1e1e1e; }
-    .log-view::-webkit-scrollbar-thumb { background: #484848; border-radius: 4px; }
-    .log-view::-webkit-scrollbar-thumb:hover { background: #5e5e5e; }
+    .log-view::-webkit-scrollbar-track { background: var(--bg-app); }
+    .log-view::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+    .log-view::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
     /* ── Unsupported browser overlay ─────────────────── */
     #unsupported {
-      /* display: none initialized inline in HTML, changed to flex by JS */
       position: fixed;
       inset: 0;
-      background: #1e1e1e;
+      background: var(--bg-app);
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 12px;
-      color: #f88;
+      color: var(--error);
       font-size: 15px;
       text-align: center;
       padding: 20px;
@@ -295,7 +353,7 @@
     <button id="clear-btn">Clear</button>
 
     <!-- Divider -->
-    <span style="color:#555; margin: 0 2px">|</span>
+    <span style="color:var(--text-dim); margin: 0 2px">|</span>
 
     <!-- Demo mode: generate virtual logs for testing without hardware -->
     <button id="demo-btn">▶ Demo</button>
@@ -304,6 +362,15 @@
       <option value="200" selected>Normal</option>
       <option value="50">Fast</option>
       <option value="10">Flood</option>
+    </select>
+
+    <!-- Divider -->
+    <span style="color:var(--text-dim); margin: 0 2px">|</span>
+
+    <!-- Theme selector: VS Dark (default) / VS Light -->
+    <select id="theme-select" title="Color theme">
+      <option value="dark">VS Dark</option>
+      <option value="light">VS Light</option>
     </select>
 
     <span id="status">Select a port to get started</span>
@@ -815,8 +882,10 @@
       keywords.forEach((kw, i) => {
         const tag = document.createElement('span');
         tag.className = 'kw-tag' + (kw.enabled ? '' : ' off');
-        tag.style.backgroundColor = kw.enabled ? kw.color : '#444';
-        tag.style.color = kw.enabled ? contrastColor(kw.color) : '#999';
+        // When enabled: use the keyword's own color (inline style)
+        // When disabled: clear inline styles so CSS .kw-tag.off (theme variables) takes over
+        tag.style.backgroundColor = kw.enabled ? kw.color : '';
+        tag.style.color = kw.enabled ? contrastColor(kw.color) : '';
 
         // Text click → toggle on/off
         const txt = document.createElement('span');
@@ -964,6 +1033,29 @@
           processLine(DEMO_LINES[demoLineIdx++]);
         }, interval);
       }
+    });
+
+    // ================================================================
+    //  Theme switching
+    //  Applies 'data-theme' attribute to <html> element.
+    //  CSS variables in :root[data-theme="light"] override the dark defaults.
+    //  Selection is saved to localStorage so it persists across page reloads.
+    // ================================================================
+    const themeSelect = document.getElementById('theme-select');
+
+    function applyTheme(name) {
+      // Setting attribute on documentElement (<html>) so CSS selector :root[data-theme] works
+      document.documentElement.setAttribute('data-theme', name);
+    }
+
+    // Restore saved theme, or fall back to dark
+    const savedTheme = localStorage.getItem('wst-theme') || 'dark';
+    applyTheme(savedTheme);
+    themeSelect.value = savedTheme;
+
+    themeSelect.addEventListener('change', () => {
+      applyTheme(themeSelect.value);
+      localStorage.setItem('wst-theme', themeSelect.value);
     });
 
     // ================================================================
