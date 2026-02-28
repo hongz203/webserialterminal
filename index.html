@@ -19,7 +19,7 @@
       background: #1e1e1e;
       color: #d4d4d4;
       /* Fixed-width font for terminal look */
-      font-family: 'Consolas', 'Courier New', monospace;
+      font-family: Arial, sans-serif;
       font-size: 13px;
     }
 
@@ -160,6 +160,33 @@
     }
     .kw-tag .kw-remove:hover { opacity: 1; }
 
+    /* Checkbox labels in keyword input group */
+    .check-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      color: #888;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .check-label input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: #8bc34a; /* checkbox 체크 색상 */
+    }
+
+    /* Small badges shown on keyword tags (e.g. "Aa" for case, "W" for whole word) */
+    .kw-badge {
+      font-size: 9px;
+      font-weight: bold;
+      border: 1px solid currentColor;
+      border-radius: 2px;
+      padding: 0 2px;
+      line-height: 1.5;
+      opacity: 0.8;
+    }
+
     /* ── Split view (main + filter) ─────────────────────────── */
     #content {
       display: flex;
@@ -193,6 +220,7 @@
       overflow-y: auto;
       overflow-x: auto;
       padding: 2px 6px;
+      font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
     }
 
     /* Render one line per span */
@@ -291,6 +319,12 @@
         value always returned as '#rrggbb' format
       -->
       <input type="color" id="keyword-color" value="#ffeb3b" title="Select highlight color" />
+      <label class="check-label" title="Case-sensitive matching">
+        <input type="checkbox" id="kw-match-case"> Match case
+      </label>
+      <label class="check-label" title="Match whole word only (word boundary)">
+        <input type="checkbox" id="kw-whole-word"> Whole word
+      </label>
       <button id="add-keyword-btn">Add</button>
     </div>
     <!-- Container where keyword tags are dynamically added -->
@@ -609,27 +643,25 @@
      * Built using DOM API directly → no innerHTML needed → XSS fully prevented
      */
     function appendHighlighted(parent, line, kw) {
-      const lowerLine = line.toLowerCase();
-      const lowerKw   = kw.text.toLowerCase();
-      const kwLen     = kw.text.length;
+      // Use findMatches to support matchCase / wholeWord options
+      const matches = findMatches(line, kw);
       let pos = 0;
-      let idx;
 
-      while ((idx = lowerLine.indexOf(lowerKw, pos)) !== -1) {
+      for (const { start, end } of matches) {
         // Plain text before the match
-        if (idx > pos) {
-          parent.appendChild(document.createTextNode(line.slice(pos, idx)));
+        if (start > pos) {
+          parent.appendChild(document.createTextNode(line.slice(pos, start)));
         }
 
         // Highlight span: background = keyword color, text = contrast color
         const hl = document.createElement('span');
         hl.className = 'hl';
         hl.style.backgroundColor = kw.color;
-        hl.style.color = contrastColor(kw.color); // Auto contrast color for readability
-        hl.textContent = line.slice(idx, idx + kwLen);
+        hl.style.color = contrastColor(kw.color);
+        hl.textContent = line.slice(start, end);
         parent.appendChild(hl);
 
-        pos = idx + kwLen;
+        pos = end;
       }
 
       // Remaining text after the last match
@@ -642,13 +674,50 @@
     //  Keyword matching: returns first matching active keyword, or null
     // ================================================================
     function matchKeyword(line) {
-      const lower = line.toLowerCase();
       for (const kw of keywords) {
-        if (kw.enabled && lower.includes(kw.text.toLowerCase())) {
-          return kw;
-        }
+        if (kw.enabled && lineMatchesKeyword(line, kw)) return kw;
       }
       return null;
+    }
+
+    // Core match logic: respects matchCase and wholeWord flags
+    function lineMatchesKeyword(line, kw) {
+      if (kw.wholeWord) {
+        // \b = word boundary — matches only if keyword is a standalone word
+        return buildRegex(kw).test(line);
+      }
+      const haystack = kw.matchCase ? line          : line.toLowerCase();
+      const needle   = kw.matchCase ? kw.text       : kw.text.toLowerCase();
+      return haystack.includes(needle);
+    }
+
+    // Build a RegExp for whole-word matching (with optional case flag)
+    function buildRegex(kw) {
+      // Escape regex special characters in the keyword text
+      const escaped = kw.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const flags   = kw.matchCase ? 'g' : 'gi';
+      return new RegExp(`\\b${escaped}\\b`, flags);
+    }
+
+    // Find all {start, end} match positions of kw in line
+    function findMatches(line, kw) {
+      const matches = [];
+      if (kw.wholeWord) {
+        const regex = buildRegex(kw); // has 'g' flag — must reset lastIndex each call
+        let m;
+        while ((m = regex.exec(line)) !== null) {
+          matches.push({ start: m.index, end: m.index + m[0].length });
+        }
+      } else {
+        const haystack = kw.matchCase ? line    : line.toLowerCase();
+        const needle   = kw.matchCase ? kw.text : kw.text.toLowerCase();
+        let pos = 0, idx;
+        while ((idx = haystack.indexOf(needle, pos)) !== -1) {
+          matches.push({ start: idx, end: idx + needle.length });
+          pos = idx + needle.length;
+        }
+      }
+      return matches;
     }
 
     // ================================================================
@@ -715,7 +784,13 @@
         return;
       }
 
-      keywords.push({ text, color: kwColor.value, enabled: true });
+      keywords.push({
+        text,
+        color:     kwColor.value,
+        enabled:   true,
+        matchCase: document.getElementById('kw-match-case').checked,
+        wholeWord: document.getElementById('kw-whole-word').checked,
+      });
       kwInput.value = '';
       renderKwTags();
     }
@@ -749,6 +824,23 @@
         txt.textContent = kw.text;
         txt.title = kw.enabled ? 'Click to disable' : 'Click to enable';
         txt.addEventListener('click', () => toggleKeyword(i));
+        tag.appendChild(txt);
+
+        // Show "Aa" badge if case-sensitive, "W" badge if whole-word
+        if (kw.matchCase) {
+          const b = document.createElement('span');
+          b.className = 'kw-badge';
+          b.textContent = 'Aa';
+          b.title = 'Case sensitive';
+          tag.appendChild(b);
+        }
+        if (kw.wholeWord) {
+          const b = document.createElement('span');
+          b.className = 'kw-badge';
+          b.textContent = 'W';
+          b.title = 'Whole word';
+          tag.appendChild(b);
+        }
 
         // × button → remove
         const del = document.createElement('button');
@@ -760,7 +852,6 @@
           removeKeyword(i);
         });
 
-        tag.appendChild(txt);
         tag.appendChild(del);
         frag.appendChild(tag);
       });
