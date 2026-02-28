@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Serial Terminal</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      /* 터미널 느낌을 위해 고정폭 폰트 사용 */
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13px;
+    }
+
+    /* ── 상단 툴바 ─────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #444;
+      flex-shrink: 0; /* 툴바는 높이 고정, 줄어들지 않음 */
+    }
+
+    #toolbar button,
+    #toolbar select {
+      padding: 4px 10px;
+      background: #3c3c3c;
+      color: #d4d4d4;
+      border: 1px solid #5a5a5a;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+
+    #toolbar button:hover:not(:disabled) { background: #505050; }
+    #toolbar button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* 연결 중일 때 "연결 해제" 버튼 강조 */
+    #connect-btn.connected {
+      background: #4a1a1a;
+      border-color: #c04040;
+      color: #ff8080;
+    }
+
+    #status {
+      font-size: 12px;
+      color: #888;
+    }
+
+    /* ── 키워드 바 ──────────────────────────────────────── */
+    #keyword-bar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap; /* 키워드 태그 많아지면 줄바꿈 */
+      gap: 6px;
+      padding: 5px 12px;
+      background: #252525;
+      border-bottom: 1px solid #444;
+      flex-shrink: 0;
+      min-height: 36px;
+    }
+
+    /* 입력 그룹 (label + input + color + button)은 한 줄 유지 */
+    #keyword-input-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    #keyword-input-group label {
+      font-size: 12px;
+      color: #888;
+      white-space: nowrap;
+    }
+
+    #keyword-input {
+      padding: 3px 8px;
+      width: 160px;
+      background: #3c3c3c;
+      color: #d4d4d4;
+      border: 1px solid #5a5a5a;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    #keyword-input:focus { outline: 1px solid #777; }
+
+    /* 색상 선택 input (네이티브 color picker) */
+    #keyword-color {
+      width: 30px;
+      height: 26px;
+      border: 1px solid #5a5a5a;
+      border-radius: 3px;
+      background: #3c3c3c;
+      cursor: pointer;
+      padding: 1px;
+    }
+
+    #add-keyword-btn {
+      padding: 3px 10px;
+      background: #3c3c3c;
+      color: #d4d4d4;
+      border: 1px solid #5a5a5a;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+    }
+    #add-keyword-btn:hover { background: #505050; }
+
+    /* 키워드 태그 컨테이너 */
+    #keyword-tags {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 개별 키워드 태그 */
+    .kw-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-size: 11px;
+      border: 1px solid rgba(255,255,255,0.15);
+      user-select: none;
+    }
+    /* 꺼진 상태: 흐리게 표시 */
+    .kw-tag.off { opacity: 0.38; }
+
+    .kw-tag .kw-text {
+      cursor: pointer; /* 클릭으로 on/off 토글 */
+    }
+
+    .kw-tag .kw-remove {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0 0 0 2px;
+      opacity: 0.7;
+    }
+    .kw-tag .kw-remove:hover { opacity: 1; }
+
+    /* ── 분할 뷰 (메인 + 필터) ─────────────────────────── */
+    #content {
+      display: flex;
+      flex: 1;     /* 남은 세로 공간 모두 차지 */
+      overflow: hidden;
+      background: #333; /* 패널 사이 구분선 색 */
+      gap: 2px;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;   /* 좌우 패널 1:1 균등 분할 */
+      overflow: hidden;
+      background: #1e1e1e;
+      min-width: 0; /* flex 자식이 content 크기를 넘지 않도록 */
+    }
+
+    .panel-title {
+      padding: 4px 10px;
+      background: #252525;
+      font-size: 11px;
+      color: #777;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+    }
+
+    /* 로그 스크롤 영역 */
+    .log-view {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      padding: 2px 6px;
+    }
+
+    /* 한 줄씩 span으로 렌더링 */
+    .log-line {
+      display: block;
+      /* pre: 공백/탭 보존, 줄바꿈 없음 → 긴 줄은 가로 스크롤 */
+      white-space: pre;
+      font-size: 12px;
+      line-height: 1.65;
+      color: #d4d4d4;
+    }
+    .log-line:hover { background: rgba(255,255,255,0.04); }
+
+    /* 키워드 하이라이트 span */
+    .hl {
+      border-radius: 2px;
+      padding: 0 1px;
+      /* background-color, color는 JS에서 인라인으로 설정 */
+    }
+
+    /* 스크롤바 스타일 (Webkit 계열: Chrome, Edge) */
+    .log-view::-webkit-scrollbar       { width: 8px; height: 8px; }
+    .log-view::-webkit-scrollbar-track { background: #1e1e1e; }
+    .log-view::-webkit-scrollbar-thumb { background: #484848; border-radius: 4px; }
+    .log-view::-webkit-scrollbar-thumb:hover { background: #5e5e5e; }
+
+    /* ── 브라우저 미지원 안내 오버레이 ─────────────────── */
+    #unsupported {
+      /* display: none 은 HTML 인라인으로 초기화, JS에서 flex로 변경 */
+      position: fixed;
+      inset: 0;
+      background: #1e1e1e;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: #f88;
+      font-size: 15px;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 브라우저 미지원 시 표시 (초기엔 숨김) -->
+  <div id="unsupported" style="display:none">
+    <div style="font-size:40px">⚠️</div>
+    <div><strong>Web Serial API가 지원되지 않는 브라우저입니다.</strong></div>
+    <div style="color:#aaa; font-size:13px; margin-top:4px">
+      Chrome 또는 Edge 89 이상에서 접속해 주세요.<br>
+      (Firefox, Safari는 Web Serial API를 지원하지 않습니다)
+    </div>
+  </div>
+
+  <!-- ── 상단 툴바 ──────────────────────────────────────── -->
+  <div id="toolbar">
+    <button id="port-btn">포트 선택</button>
+
+    <select id="baud-select" title="Baud Rate">
+      <option value="9600">9600</option>
+      <option value="19200">19200</option>
+      <option value="38400">38400</option>
+      <option value="57600">57600</option>
+      <option value="115200" selected>115200</option>
+      <option value="230400">230400</option>
+      <option value="460800">460800</option>
+      <option value="921600">921600</option>
+    </select>
+
+    <button id="connect-btn" disabled>연결</button>
+    <button id="clear-btn">Clear</button>
+
+    <span id="status">포트를 먼저 선택하세요</span>
+  </div>
+
+  <!-- ── 키워드 바 ──────────────────────────────────────── -->
+  <div id="keyword-bar">
+    <div id="keyword-input-group">
+      <label for="keyword-input">Keywords:</label>
+      <input type="text" id="keyword-input" placeholder="키워드 입력..." maxlength="80" />
+      <!--
+        color input: 브라우저 네이티브 색상 선택 팝업을 띄움
+        value는 항상 '#rrggbb' 형식으로 반환됨
+      -->
+      <input type="color" id="keyword-color" value="#ffeb3b" title="하이라이트 색상 선택" />
+      <button id="add-keyword-btn">Add</button>
+    </div>
+    <!-- 키워드 태그들이 동적으로 추가되는 컨테이너 -->
+    <div id="keyword-tags"></div>
+  </div>
+
+  <!-- ── 분할 뷰 ────────────────────────────────────────── -->
+  <div id="content">
+    <!-- 좌: 전체 수신 로그 -->
+    <div class="panel">
+      <div class="panel-title">Main Log — 전체 수신 로그 (최대 10,000줄)</div>
+      <div class="log-view" id="main-log"></div>
+    </div>
+
+    <!-- 우: 키워드 매칭 라인만 표시 -->
+    <div class="panel">
+      <div class="panel-title">Filtered Log — 키워드 매칭 라인 (최대 5,000줄)</div>
+      <div class="log-view" id="filtered-log"></div>
+    </div>
+  </div>
+
+
+  <script>
+    'use strict';
+
+    // ================================================================
+    //  상수: 메모리 관리 버퍼 한도
+    // ================================================================
+    const MAX_MAIN   = 10_000;  // 메인 뷰 최대 줄 수
+    const MAX_FILTER = 5_000;   // 필터 뷰 최대 줄 수
+
+    // ================================================================
+    //  전역 상태
+    // ================================================================
+    let port            = null;   // Web Serial API가 반환하는 포트 객체
+    let reader          = null;   // port.readable에서 데이터를 읽는 reader
+    let readLoopPromise = null;   // readLoop() 종료를 기다리기 위한 Promise 저장
+    let isConnected     = false;  // 현재 연결 여부
+
+    // 수신 바이트 스트림은 줄 경계와 무관하게 청크 단위로 들어옴
+    // 예: "hel" | "lo\nwor" | "ld\n" → '\n' 나오기 전까지 버퍼에 보관
+    let lineBuffer = '';
+
+    // 키워드 목록: Array<{ text: string, color: string, enabled: boolean }>
+    let keywords = [];
+
+    // ── requestAnimationFrame 기반 배치 렌더링 큐 ───────────────────
+    // 빠른 시리얼 로그가 들어올 때 한 프레임마다 한꺼번에 DOM에 반영
+    // → DOM 조작 횟수를 줄여 성능 향상
+    let pendingMain   = [];   // 메인 뷰 대기 줄: string[]
+    let pendingFilter = [];   // 필터 뷰 대기 줄: Array<{ line, kw }>
+    let rafId         = null; // requestAnimationFrame ID (null = 미예약)
+
+    // ================================================================
+    //  DOM 참조 (매번 querySelector 하지 않도록 미리 캐싱)
+    // ================================================================
+    const mainLogEl     = document.getElementById('main-log');
+    const filteredLogEl = document.getElementById('filtered-log');
+    const statusEl      = document.getElementById('status');
+    const portBtn       = document.getElementById('port-btn');
+    const connectBtn    = document.getElementById('connect-btn');
+    const baudSelect    = document.getElementById('baud-select');
+    const clearBtn      = document.getElementById('clear-btn');
+    const kwInput       = document.getElementById('keyword-input');
+    const kwColor       = document.getElementById('keyword-color');
+    const addKwBtn      = document.getElementById('add-keyword-btn');
+    const kwTagsEl      = document.getElementById('keyword-tags');
+
+    // ================================================================
+    //  브라우저 지원 확인
+    //  Web Serial API: Chrome/Edge 89+만 지원, Firefox/Safari 미지원
+    // ================================================================
+    if (!('serial' in navigator)) {
+      document.getElementById('unsupported').style.display = 'flex';
+      document.getElementById('toolbar').style.display     = 'none';
+      document.getElementById('keyword-bar').style.display = 'none';
+      document.getElementById('content').style.display     = 'none';
+    }
+
+    // ================================================================
+    //  포트 선택
+    // ================================================================
+    portBtn.addEventListener('click', async () => {
+      try {
+        // requestPort(): 브라우저가 포트 선택 다이얼로그를 띄움
+        // 보안 정책: 반드시 사용자 클릭(제스처) 이후에만 호출 가능
+        // 자동 연결, 이전 포트 기억은 불가 (매번 사용자가 선택해야 함)
+        port = await navigator.serial.requestPort();
+        setStatus('포트 선택됨 — [연결] 버튼을 누르세요', '#8bc34a');
+        connectBtn.disabled = false;
+      } catch (err) {
+        // NotFoundError: 사용자가 다이얼로그를 취소 → 정상 취소이므로 무시
+        if (err.name !== 'NotFoundError') {
+          setStatus('포트 선택 오류: ' + err.message, '#f88');
+        }
+      }
+    });
+
+    // ================================================================
+    //  연결 / 해제 버튼 클릭
+    // ================================================================
+    connectBtn.addEventListener('click', () => {
+      if (isConnected) disconnectSerial();
+      else             connectSerial();
+    });
+
+    async function connectSerial() {
+      try {
+        const baudRate = parseInt(baudSelect.value, 10);
+
+        // port.open(): 선택한 포트를 지정한 baud rate로 엶
+        await port.open({ baudRate });
+
+        isConnected = true;
+        connectBtn.textContent = '연결 해제';
+        connectBtn.classList.add('connected');
+        portBtn.disabled    = true;
+        baudSelect.disabled = true;
+        setStatus(`연결됨 ● ${baudRate} baud`, '#8bc34a');
+
+        // readLoop를 await 없이 호출 → 비동기로 백그라운드 실행
+        // Promise를 저장해두면 disconnectSerial에서 종료를 기다릴 수 있음
+        readLoopPromise = readLoop();
+
+      } catch (err) {
+        setStatus('연결 실패: ' + err.message, '#f88');
+      }
+    }
+
+    async function disconnectSerial() {
+      // 먼저 플래그를 내림 → readLoop의 catch에서 이 함수를 재귀 호출하지 않도록
+      isConnected = false;
+
+      // reader.cancel(): 진행 중인 read()를 중단시킴
+      if (reader) {
+        try { await reader.cancel(); } catch (_) { /* 무시 */ }
+      }
+
+      // readLoop가 완전히 끝날 때까지 대기
+      // → finally 블록의 reader.releaseLock()이 완료된 후에야 port.close()가 안전
+      if (readLoopPromise) {
+        try { await readLoopPromise; } catch (_) { /* 무시 */ }
+        readLoopPromise = null;
+      }
+
+      try { await port.close(); } catch (_) { /* 이미 닫혔거나 오류 무시 */ }
+
+      // UI 복원
+      connectBtn.textContent = '연결';
+      connectBtn.classList.remove('connected');
+      portBtn.disabled    = false;
+      baudSelect.disabled = false;
+      setStatus('연결 해제됨', '#888');
+    }
+
+    // ================================================================
+    //  데이터 읽기 루프 (비동기, 연결 중 계속 실행됨)
+    // ================================================================
+    async function readLoop() {
+      // TextDecoder: Uint8Array(바이트 배열) → 문자열 변환
+      // { stream: true }: 멀티바이트 문자(UTF-8 한글 등)가 청크 경계에 걸쳐도 올바르게 처리
+      // { fatal: false }: 잘못된 바이트를 오류 대신 '?' 문자로 대체
+      const decoder = new TextDecoder('utf-8', { fatal: false });
+
+      // port.readable: 포트 수신 데이터의 ReadableStream
+      reader = port.readable.getReader();
+
+      let unexpectedError = null;
+
+      try {
+        while (true) {
+          // read(): 다음 청크가 올 때까지 비동기 대기
+          // value: Uint8Array (수신된 바이트), done: 스트림 종료 여부
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          // { stream: true }로 decode해야 청크 경계의 멀티바이트 문자를 올바르게 이어붙임
+          processChunk(decoder.decode(value, { stream: true }));
+        }
+      } catch (err) {
+        if (isConnected) {
+          // USB 케이블 뽑힘 등 예기치 않은 연결 끊김
+          unexpectedError = err;
+          isConnected = false;
+        }
+        // isConnected가 false면 우리가 cancel()한 것이므로 무시
+      } finally {
+        // releaseLock()은 반드시 호출해야 port.close()가 가능
+        reader.releaseLock();
+        reader = null;
+
+        // releaseLock 이후에 port.close()를 안전하게 호출 가능
+        if (unexpectedError) {
+          setStatus('연결 끊김: ' + unexpectedError.message, '#f88');
+          try { await port.close(); } catch (_) {}
+          port = null;
+          connectBtn.textContent = '연결';
+          connectBtn.classList.remove('connected');
+          connectBtn.disabled = true;   // 포트를 다시 선택해야 함
+          portBtn.disabled    = false;
+          baudSelect.disabled = false;
+        }
+      }
+    }
+
+    // ================================================================
+    //  수신 청크 → 줄 단위 분리
+    // ================================================================
+    function processChunk(chunk) {
+      // 이전 청크에서 '\n' 없이 끊긴 불완전 라인 뒤에 새 청크를 이어붙임
+      lineBuffer += chunk;
+
+      // '\n' 기준으로 분리
+      const parts = lineBuffer.split('\n');
+
+      // split 결과의 마지막 요소는 아직 '\n'을 받지 못한 미완성 라인
+      // → 다음 청크에서 이어 받을 때까지 보관
+      lineBuffer = parts.pop() ?? '';
+
+      for (const raw of parts) {
+        // '\r\n' (Windows CRLF) 대응: 끝의 '\r' 제거
+        processLine(raw.replace(/\r$/, ''));
+      }
+    }
+
+    function processLine(line) {
+      // 메인 뷰 큐에 추가
+      pendingMain.push(line);
+
+      // 활성화된 키워드 중 매칭되는 것 검색
+      const kw = matchKeyword(line);
+      if (kw) pendingFilter.push({ line, kw });
+
+      // requestAnimationFrame: 다음 화면 그리기 직전에 flushPending 호출
+      // 여러 줄이 연속으로 들어와도 RAF는 한 번만 예약됨 → 한 프레임에 일괄 처리
+      if (!rafId) {
+        rafId = requestAnimationFrame(flushPending);
+      }
+    }
+
+    // ================================================================
+    //  배치 DOM 업데이트 (requestAnimationFrame 콜백)
+    // ================================================================
+    function flushPending() {
+      rafId = null;
+
+      if (pendingMain.length > 0) {
+        flushToView(mainLogEl, pendingMain, MAX_MAIN, (line) => buildLineEl(line, null));
+        pendingMain = [];
+      }
+
+      if (pendingFilter.length > 0) {
+        flushToView(filteredLogEl, pendingFilter, MAX_FILTER, ({ line, kw }) => buildLineEl(line, kw));
+        pendingFilter = [];
+      }
+    }
+
+    /**
+     * 대기 중인 줄들을 DOM에 일괄 추가하고, 버퍼 한도 초과분을 제거
+     * @param {HTMLElement} container   - 로그 뷰 DOM 요소
+     * @param {Array}       items       - 추가할 항목 배열
+     * @param {number}      maxLines    - 최대 줄 수
+     * @param {Function}    buildEl     - 항목 → DOM 요소 변환 함수
+     */
+    function flushToView(container, items, maxLines, buildEl) {
+      // 추가 전에 스크롤 위치 확인
+      // 추가 후에 확인하면 scrollHeight가 이미 바뀌어서 판단이 틀릴 수 있음
+      const shouldScroll = isAtBottom(container);
+
+      // DocumentFragment: 실제 DOM 트리 밖의 가상 컨테이너
+      // 여러 노드를 fragment에 모아 appendChild(fragment) 한 번으로 반영
+      // → 리플로우(레이아웃 재계산)가 한 번만 발생 → 성능 향상
+      const frag = document.createDocumentFragment();
+      for (const item of items) {
+        frag.appendChild(buildEl(item));
+      }
+
+      // 추가 후 총 줄 수가 maxLines를 초과하는 만큼 가장 오래된 줄 제거
+      const excess = container.children.length + items.length - maxLines;
+      if (excess > 0) {
+        for (let i = 0; i < excess; i++) {
+          if (container.firstChild) container.removeChild(container.firstChild);
+        }
+      }
+
+      container.appendChild(frag);
+
+      if (shouldScroll) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    // ================================================================
+    //  로그 라인 DOM 요소 생성 (키워드 하이라이트 포함)
+    // ================================================================
+    function buildLineEl(line, kw) {
+      const span = document.createElement('span');
+      span.className = 'log-line';
+
+      if (!kw) {
+        // 키워드 없음: textContent 사용
+        // ※ innerHTML += 방식은 전체 파싱 + XSS 위험이 있으므로 절대 사용 금지
+        //    textContent는 HTML 특수문자를 자동 이스케이프함
+        span.textContent = line;
+      } else {
+        // 키워드가 있는 줄: 매칭 부분만 하이라이트
+        appendHighlighted(span, line, kw);
+      }
+
+      return span;
+    }
+
+    /**
+     * 텍스트에서 keyword 매칭 부분을 찾아 하이라이트 span을 삽입
+     * DOM API로 직접 구성 → innerHTML 불필요 → XSS 완전 차단
+     */
+    function appendHighlighted(parent, line, kw) {
+      const lowerLine = line.toLowerCase();
+      const lowerKw   = kw.text.toLowerCase();
+      const kwLen     = kw.text.length;
+      let pos = 0;
+      let idx;
+
+      while ((idx = lowerLine.indexOf(lowerKw, pos)) !== -1) {
+        // 매칭 전 일반 텍스트
+        if (idx > pos) {
+          parent.appendChild(document.createTextNode(line.slice(pos, idx)));
+        }
+
+        // 하이라이트 span: 배경색 = 키워드 색상, 글자색 = 대비색
+        const hl = document.createElement('span');
+        hl.className = 'hl';
+        hl.style.backgroundColor = kw.color;
+        hl.style.color = contrastColor(kw.color); // 가독성을 위한 자동 대비색
+        hl.textContent = line.slice(idx, idx + kwLen);
+        parent.appendChild(hl);
+
+        pos = idx + kwLen;
+      }
+
+      // 나머지 텍스트 (마지막 매칭 이후)
+      if (pos < line.length) {
+        parent.appendChild(document.createTextNode(line.slice(pos)));
+      }
+    }
+
+    // ================================================================
+    //  활성 키워드 매칭: 처음 매칭되는 키워드 반환 (없으면 null)
+    // ================================================================
+    function matchKeyword(line) {
+      const lower = line.toLowerCase();
+      for (const kw of keywords) {
+        if (kw.enabled && lower.includes(kw.text.toLowerCase())) {
+          return kw;
+        }
+      }
+      return null;
+    }
+
+    // ================================================================
+    //  배경색에 대비되는 텍스트 색상 반환 (흑 또는 백)
+    // ================================================================
+    function contrastColor(hex) {
+      // hex: '#rrggbb' 형식 (color input은 항상 이 형식)
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      // YIQ 밝기 공식: 인간 눈의 색 민감도를 반영한 가중 평균
+      // 초록 > 빨강 > 파랑 순으로 밝게 인식
+      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+      return brightness > 128 ? '#000000' : '#ffffff';
+    }
+
+    // ================================================================
+    //  스크롤이 맨 아래인지 확인
+    // ================================================================
+    function isAtBottom(el) {
+      // scrollHeight  : 스크롤 가능한 전체 콘텐츠 높이
+      // scrollTop     : 현재 위에서 스크롤된 픽셀 수
+      // clientHeight  : 실제 보이는 영역 높이
+      // 오차 5px 허용: 소수점 픽셀 계산 차이 대응
+      return el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+    }
+
+    // ================================================================
+    //  상태 메시지 표시
+    // ================================================================
+    function setStatus(msg, color = '#888') {
+      statusEl.textContent = msg;
+      statusEl.style.color = color;
+    }
+
+    // ================================================================
+    //  Clear 버튼: 로그 화면과 버퍼 모두 초기화
+    // ================================================================
+    clearBtn.addEventListener('click', () => {
+      mainLogEl.innerHTML     = '';
+      filteredLogEl.innerHTML = '';
+      lineBuffer    = '';
+      pendingMain   = [];
+      pendingFilter = [];
+    });
+
+    // ================================================================
+    //  키워드 추가
+    // ================================================================
+    addKwBtn.addEventListener('click', addKeyword);
+
+    // Enter 키로도 추가 가능
+    kwInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addKeyword();
+    });
+
+    function addKeyword() {
+      const text = kwInput.value.trim();
+      if (!text) return;
+
+      // 중복 방지 (대소문자 구분 없이)
+      if (keywords.some(k => k.text.toLowerCase() === text.toLowerCase())) {
+        kwInput.select();
+        return;
+      }
+
+      keywords.push({ text, color: kwColor.value, enabled: true });
+      kwInput.value = '';
+      renderKwTags();
+    }
+
+    function removeKeyword(i) {
+      keywords.splice(i, 1);
+      renderKwTags();
+    }
+
+    function toggleKeyword(i) {
+      keywords[i].enabled = !keywords[i].enabled;
+      renderKwTags();
+    }
+
+    // ================================================================
+    //  키워드 태그 목록 렌더링
+    // ================================================================
+    function renderKwTags() {
+      // DocumentFragment로 모든 태그를 만든 뒤 한 번에 삽입 (성능)
+      const frag = document.createDocumentFragment();
+
+      keywords.forEach((kw, i) => {
+        const tag = document.createElement('span');
+        tag.className = 'kw-tag' + (kw.enabled ? '' : ' off');
+        tag.style.backgroundColor = kw.enabled ? kw.color : '#444';
+        tag.style.color = kw.enabled ? contrastColor(kw.color) : '#999';
+
+        // 텍스트 클릭 → on/off 토글
+        const txt = document.createElement('span');
+        txt.className = 'kw-text';
+        txt.textContent = kw.text;
+        txt.title = kw.enabled ? '클릭하여 비활성화' : '클릭하여 활성화';
+        txt.addEventListener('click', () => toggleKeyword(i));
+
+        // × 버튼 → 제거
+        const del = document.createElement('button');
+        del.className = 'kw-remove';
+        del.textContent = '×';
+        del.title = '키워드 제거';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation(); // 부모(tag)로 이벤트 전파 방지
+          removeKeyword(i);
+        });
+
+        tag.appendChild(txt);
+        tag.appendChild(del);
+        frag.appendChild(tag);
+      });
+
+      kwTagsEl.innerHTML = ''; // 기존 태그 초기화
+      kwTagsEl.appendChild(frag);
+    }
+
+    // ================================================================
+    //  초기 상태 설정
+    // ================================================================
+    setStatus('포트를 먼저 선택하세요');
+
+  </script>
+</body>
+</html>
