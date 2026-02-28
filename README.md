@@ -4,6 +4,12 @@ A browser-based serial terminal with real-time keyword filtering — no installa
 
 Share a single URL and your whole team can use it instantly.
 
+<img width="1970" height="1339" alt="image" src="https://github.com/user-attachments/assets/dde58013-8294-49b2-9ee0-6e5baeffb345" />
+
+
+
+
+
 ---
 
 ## Why This Exists
