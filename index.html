@@ -285,8 +285,8 @@
       display: flex;
       flex: 1;
       overflow: hidden;
-      background: var(--bg-divider);
-      gap: 2px;
+      background: var(--bg-app);
+      /* gap removed — #divider element acts as the separator */
     }
 
     .panel {
@@ -296,6 +296,19 @@
       overflow: hidden;
       background: var(--bg-app);
       min-width: 0;
+    }
+
+    /* Draggable divider between the two log panels */
+    #divider {
+      width: 5px;
+      flex-shrink: 0;
+      background: var(--bg-divider);
+      cursor: col-resize;
+      /* Slightly wider invisible hit area via outline, keeps visual width at 5px */
+    }
+    #divider:hover,
+    #divider.dragging {
+      background: var(--border);
     }
 
     .panel-title {
@@ -454,7 +467,7 @@
   <!-- ── Split view ────────────────────────────────────────── -->
   <div id="content">
     <!-- Left: all received logs -->
-    <div class="panel">
+    <div class="panel" id="panel-main">
       <div class="panel-title">
         <span>Main Log — All received lines (max 10,000)</span>
         <button id="save-log-btn" title="Save Main Log to .log file">Save Log</button>
@@ -462,8 +475,11 @@
       <div class="log-view" id="main-log"></div>
     </div>
 
+    <!-- Draggable divider: drag left/right to resize panels -->
+    <div id="divider" title="Drag to resize"></div>
+
     <!-- Right: keyword-matched lines only -->
-    <div class="panel">
+    <div class="panel" id="panel-filter">
       <div class="panel-title">
         <span>Filtered Log — Keyword matched lines (max 5,000)</span>
         <button id="save-filtered-btn" title="Save Filtered Log to .log file">Save Log</button>
@@ -1218,6 +1234,64 @@
       applyTheme(themeSelect.value);
       localStorage.setItem('wst-theme', themeSelect.value);
     });
+
+    // ================================================================
+    //  Resizable panel divider
+    //  Drag #divider left/right to adjust the Main / Filtered panel split.
+    //  Width of the left panel is stored in localStorage and restored on reload.
+    // ================================================================
+    const dividerEl = document.getElementById('divider');
+    const panelMain = document.getElementById('panel-main');
+
+    const MIN_PANEL_WIDTH = 200; // px — neither panel can be narrower than this
+
+    let isDragging  = false;
+    let dragStartX  = 0;
+    let dragStartW  = 0;
+
+    dividerEl.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartW = panelMain.getBoundingClientRect().width;
+      dividerEl.classList.add('dragging');
+
+      // Prevent accidental text selection while dragging
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor     = 'col-resize';
+
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+
+      const contentWidth = document.getElementById('content').clientWidth;
+      const dividerWidth = dividerEl.offsetWidth;
+      const maxWidth     = contentWidth - dividerWidth - MIN_PANEL_WIDTH;
+
+      const newWidth = Math.min(
+        Math.max(dragStartW + (e.clientX - dragStartX), MIN_PANEL_WIDTH),
+        maxWidth
+      );
+
+      // Fix the left panel to an explicit pixel width; right panel (flex:1) fills the rest
+      panelMain.style.flex = `0 0 ${newWidth}px`;
+      localStorage.setItem('wst-divider', newWidth);
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      dividerEl.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor     = '';
+    });
+
+    // Restore saved panel width from previous session
+    const savedDividerW = localStorage.getItem('wst-divider');
+    if (savedDividerW) {
+      panelMain.style.flex = `0 0 ${savedDividerW}px`;
+    }
 
     // ================================================================
     //  Initial state
