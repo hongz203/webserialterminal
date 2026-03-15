@@ -95,36 +95,99 @@
     #toolbar {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       padding: 6px 12px;
       background: var(--bg-toolbar);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
 
+    /* 기본 pill 스타일: 모든 toolbar 버튼/셀렉트에 공통 적용 */
     #toolbar button,
     #toolbar select {
-      padding: 4px 10px;
+      padding: 4px 12px;
       background: var(--bg-input);
       color: var(--text);
       border: 1px solid var(--border-input);
-      border-radius: 3px;
+      border-radius: 16px;         /* pill 모양 */
       cursor: pointer;
       font-family: inherit;
       font-size: 12px;
+      transition: background 0.15s;
+      white-space: nowrap;
     }
-
     #toolbar button:hover:not(:disabled) { background: var(--btn-hover); }
     #toolbar button:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    /* Highlight "Disconnect" button while connected */
+    /*
+      Segmented pill 그룹: 연관된 요소들을 하나의 pill처럼 묶음
+      예) [Select Port | 115200▼]  [▶ Demo | Normal▼]
+
+      overflow:hidden 대신 :first-child/:last-child 로 모서리 처리:
+      - 첫 번째 자식: 왼쪽만 pill 모양
+      - 마지막 자식: 오른쪽만 pill 모양
+      - 이 방식은 그룹이 자연스럽게 넓어지므로 clipping 문제가 없음
+    */
+    .pill-group {
+      display: flex;
+      align-items: stretch;        /* 높이를 자식 중 가장 큰 것에 맞춤 */
+    }
+    /*
+      CSS 우선순위(specificity) 주의:
+      '#toolbar button' = (1,0,1) = 101점
+      '.pill-group > button' = (0,1,1) = 11점  ← 이게 지면 그룹 스타일이 안 먹힘
+      해결: '#toolbar .pill-group > button' = (1,1,1) = 111점 으로 높여줌
+    */
+    #toolbar .pill-group > button,
+    #toolbar .pill-group > select {
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+    }
+    /* 첫 번째 자식: 왼쪽만 pill 모양 + 왼쪽 테두리 */
+    #toolbar .pill-group > :first-child {
+      border-left: 1px solid var(--border-input);
+      border-radius: 16px 0 0 16px;
+    }
+    /* 마지막 자식: 오른쪽만 pill 모양 + 오른쪽 테두리 */
+    #toolbar .pill-group > :last-child {
+      border-right: 1px solid var(--border-input);
+      border-radius: 0 16px 16px 0;
+    }
+    /* 요소 사이 구분선 */
+    #toolbar .pill-group > * + * {
+      border-left: 1px solid var(--border-input);
+    }
+
+    /*
+      Connect 버튼: 연결 전엔 accent(초록) 컬러 outline pill
+      연결 후엔 기존 빨간 Disconnect 스타일 유지
+    */
+    #connect-btn {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    #connect-btn:hover:not(:disabled) {
+      background: rgba(139, 195, 74, 0.12); /* 초록 살짝 tint */
+    }
     #connect-btn.connected {
       background: var(--connected-bg);
       border-color: var(--connected-border);
       color: var(--connected-text);
     }
+    #connect-btn.connected:hover {
+      background: var(--connected-bg);
+      filter: brightness(1.15);
+    }
 
+    /* Clear 버튼: 좀 더 muted하게 */
+    #clear-btn {
+      color: var(--text-dim);
+    }
+
+    /* status: 오른쪽 끝으로 밀어냄 */
     #status {
+      margin-left: auto;
       font-size: 12px;
       color: var(--text-dim);
     }
@@ -151,56 +214,85 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 6px;
-      padding: 5px 12px;
+      padding: 6px 12px;
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
-      min-height: 36px;
+      min-height: 42px;
     }
 
     #keyword-input-group {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 6px;
     }
 
-    #keyword-input-group label {
-      font-size: 12px;
+    /*
+      Google Drive 스타일 검색창:
+      - input을 감싸는 pill 모양 컨테이너
+      - 아이콘 + input + color picker 를 하나의 덩어리처럼 보이게
+    */
+    #kw-search-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: var(--bg-input);
+      border-radius: 24px;           /* pill 모양의 핵심 */
+      border: 1px solid transparent; /* 평소엔 테두리 없음 */
+      transition: background 0.15s, border-color 0.15s;
+      cursor: text;                  /* pill 어디 클릭해도 텍스트 커서 표시 */
+    }
+    /* focus 시 테두리가 살짝 나타나서 "활성" 느낌 */
+    #kw-search-pill:focus-within {
+      background: var(--bg-app);
+      border-color: var(--border-focus);
+    }
+
+    /* 돋보기 아이콘 — SVG inline으로 넣어서 외부 의존 없음 */
+    #kw-search-icon {
+      width: 14px;
+      height: 14px;
+      opacity: 0.5;
+      flex-shrink: 0;
       color: var(--text-dim);
-      white-space: nowrap;
     }
 
     #keyword-input {
-      padding: 3px 8px;
       width: 160px;
-      background: var(--bg-input);
+      background: transparent;       /* pill 배경에 묻혀야 해서 투명 */
       color: var(--text);
-      border: 1px solid var(--border-input);
-      border-radius: 3px;
+      border: none;                  /* 테두리는 pill이 담당 */
+      outline: none;
       font-family: inherit;
       font-size: 12px;
     }
-    #keyword-input:focus { outline: 1px solid var(--border-focus); }
 
+    /* color picker: pill 안 오른쪽 끝에 작은 원형으로 */
     #keyword-color {
-      width: 30px;
-      height: 26px;
-      border: 1px solid var(--border-input);
-      border-radius: 3px;
-      background: var(--bg-input);
+      width: 20px;
+      height: 20px;
+      border: none;
+      border-radius: 50%;
+      background: none;
       cursor: pointer;
-      padding: 1px;
+      padding: 0;
+      flex-shrink: 0;
     }
+    /* 브라우저 기본 color swatch 스타일 덮어쓰기 */
+    #keyword-color::-webkit-color-swatch-wrapper { padding: 0; }
+    #keyword-color::-webkit-color-swatch { border-radius: 50%; border: 2px solid rgba(255,255,255,0.25); }
 
     #add-keyword-btn {
-      padding: 3px 10px;
+      padding: 4px 14px;
       background: var(--bg-input);
       color: var(--text);
       border: 1px solid var(--border-input);
-      border-radius: 3px;
+      border-radius: 16px;           /* 버튼도 pill 모양으로 통일 */
       cursor: pointer;
       font-family: inherit;
       font-size: 12px;
+      transition: background 0.15s;
     }
     #add-keyword-btn:hover { background: var(--btn-hover); }
 
@@ -397,61 +489,82 @@
 
   <!-- ── Toolbar ──────────────────────────────────────── -->
   <div id="toolbar">
-    <button id="port-btn">Select Port</button>
 
-    <select id="baud-select" title="Baud Rate">
-      <option value="9600">9600</option>
-      <option value="19200">19200</option>
-      <option value="38400">38400</option>
-      <option value="57600">57600</option>
-      <option value="115200" selected>115200</option>
-      <option value="230400">230400</option>
-      <option value="460800">460800</option>
-      <option value="921600">921600</option>
-    </select>
+    <!--
+      Port 그룹: [Select Port | 115200▼] 를 하나의 pill로 묶음
+      두 요소가 시각적으로 한 덩어리처럼 보여 "포트 설정"임을 직관적으로 전달
+    -->
+    <div class="pill-group">
+      <button id="port-btn">Select Port</button>
+      <select id="baud-select" title="Baud Rate">
+        <option value="9600">9600</option>
+        <option value="19200">19200</option>
+        <option value="38400">38400</option>
+        <option value="57600">57600</option>
+        <option value="115200" selected>115200</option>
+        <option value="230400">230400</option>
+        <option value="460800">460800</option>
+        <option value="921600">921600</option>
+      </select>
+    </div>
 
+    <!-- Connect: accent 컬러 pill, 연결 후 "Disconnect"로 텍스트/색상 변경 -->
     <button id="connect-btn" disabled>Connect</button>
+
+    <!-- Clear: muted 스타일 pill -->
     <button id="clear-btn">Clear</button>
 
-    <!-- Timestamp toggle: prepend [HH:MM:SS.mmm] to each incoming line -->
+    <!-- Timestamp toggle -->
     <label id="timestamp-label" title="Prepend receive timestamp to each line">
       <input type="checkbox" id="timestamp-toggle"> Timestamp
     </label>
 
-    <!-- Divider -->
-    <span style="color:var(--text-dim); margin: 0 2px">|</span>
+    <!--
+      Demo 그룹: [▶ Demo | Normal▼] 를 하나의 pill로 묶음
+    -->
+    <div class="pill-group">
+      <button id="demo-btn">▶ Demo</button>
+      <select id="demo-speed" title="Demo log speed">
+        <option value="800">Slow</option>
+        <option value="200" selected>Normal</option>
+        <option value="50">Fast</option>
+        <option value="10">Flood</option>
+      </select>
+    </div>
 
-    <!-- Demo mode: generate virtual logs for testing without hardware -->
-    <button id="demo-btn">▶ Demo</button>
-    <select id="demo-speed" title="Demo log speed">
-      <option value="800">Slow</option>
-      <option value="200" selected>Normal</option>
-      <option value="50">Fast</option>
-      <option value="10">Flood</option>
-    </select>
-
-    <!-- Divider -->
-    <span style="color:var(--text-dim); margin: 0 2px">|</span>
-
-    <!-- Theme selector: VS Dark (default) / VS Light -->
+    <!-- Theme selector -->
     <select id="theme-select" title="Color theme">
       <option value="dark">Dark (Visual Studio)</option>
-      <option value="light">Light (Visual Sutdio)</option>
+      <option value="light">Light (Visual Studio)</option>
     </select>
 
+    <!-- status: margin-left:auto 으로 오른쪽 끝에 고정 -->
     <span id="status">Select a port to get started</span>
   </div>
 
   <!-- ── Keyword bar ──────────────────────────────────────── -->
   <div id="keyword-bar">
     <div id="keyword-input-group">
-      <label for="keyword-input">Keywords:</label>
-      <input type="text" id="keyword-input" placeholder="Enter keyword..." maxlength="80" />
+
       <!--
-        color input: shows native browser color picker
-        value always returned as '#rrggbb' format
+        Google Drive 스타일 pill 입력창:
+        돋보기 아이콘 + input + color picker 를 하나의 둥근 컨테이너로 묶음
+        div 클릭 시 input에 포커스 가도록 cursor:text + onclick 처리
       -->
-      <input type="color" id="keyword-color" value="#ffeb3b" title="Select highlight color" />
+      <div id="kw-search-pill" onclick="document.getElementById('keyword-input').focus()">
+        <!-- 돋보기 아이콘 (SVG inline — 외부 파일/CDN 의존 없음) -->
+        <svg id="kw-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="16.5" y1="16.5" x2="22" y2="22"/>
+        </svg>
+        <input type="text" id="keyword-input" placeholder="Add keyword..." maxlength="80" />
+        <!--
+          color input: pill 안 오른쪽 끝에 원형으로 배치
+          value always returned as '#rrggbb' format
+        -->
+        <input type="color" id="keyword-color" value="#ffeb3b" title="Select highlight color" />
+      </div>
+
       <label class="check-label" title="Case-sensitive matching">
         <input type="checkbox" id="kw-match-case"> Match case
       </label>
